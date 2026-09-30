@@ -1,0 +1,14 @@
+# Values for the pinned Traefik chart, rendered with helm template. The NodePorts
+# match the kind port mappings in kind-config.yaml.
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+service:
+  spec:
+    type: NodePort
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443

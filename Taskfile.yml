@@ -1,0 +1,49 @@
+version: '3'
+
+# The k8s tasks read real lab values from .env (see .env.example). DRY_RUN=1
+# prints the commands instead of running them.
+env:
+  DRY_RUN: '{{.DRY_RUN}}'
+
+tasks:
+  k8s:up:
+    desc: "[Linux] Create the kind cluster with Traefik, cert-manager and whoami (idempotent)"
+    cmds:
+      - k8s/up.sh
+
+  k8s:issuer:
+    desc: "[Linux] ACME ClusterIssuer for a CryptOS Intermediate and a P-384 Certificate for HOST"
+    summary: |
+      task k8s:issuer ACME_URL=https://ca.example.org/acme/directory CA_BUNDLE=root.pem HOST=whoami.example.org
+      Optional: EAB_KID and EAB_HMAC for an External Account Binding.
+    env:
+      ACME_URL: '{{.ACME_URL}}'
+      CA_BUNDLE: '{{.CA_BUNDLE}}'
+      HOST: '{{.HOST}}'
+      EAB_KID: '{{.EAB_KID}}'
+      EAB_HMAC: '{{.EAB_HMAC}}'
+    cmds:
+      - k8s/issuer.sh
+
+  k8s:verify:
+    desc: "[Linux] Wait for the Certificate, check the served chain up to the CryptOS root, print the serial"
+    env:
+      CA_BUNDLE: '{{.CA_BUNDLE}}'
+      HOST: '{{.HOST}}'
+    cmds:
+      - k8s/verify.sh
+
+  k8s:renew:
+    desc: "[Linux] Force a renewal with cmctl and verify the new serial is served"
+    cmds:
+      - k8s/renew.sh
+
+  k8s:down:
+    desc: "[Linux] Delete the kind cluster"
+    cmds:
+      - k8s/down.sh
+
+  k8s:check:
+    desc: "Offline checks: shellcheck, pins, dry runs, kubeconform, chain checks"
+    cmds:
+      - k8s/test/run.sh

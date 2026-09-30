@@ -1,0 +1,57 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ${LAB_ACME_ISSUER}
+spec:
+  acme:
+    server: ${ACME_URL}
+    caBundle: ${CA_BUNDLE_B64}
+    privateKeySecretRef:
+      name: ${LAB_ACME_ISSUER}-account
+${EAB_BLOCK}
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: whoami
+  namespace: ${LAB_K8S_NAMESPACE}
+spec:
+  secretName: whoami-tls
+  dnsNames:
+    - ${HOST}
+  # CryptOS refuses RSA 2048, cert-manager's default.
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+    rotationPolicy: Always
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: ${LAB_ACME_ISSUER}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami-tls
+  namespace: ${LAB_K8S_NAMESPACE}
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - ${HOST}
+      secretName: whoami-tls
+  rules:
+    - host: ${HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  name: http
