@@ -27,3 +27,7 @@ esxi/boot.sh 80          # power on, capture serial + screenshot
 esxi/serial.sh           # re-read the serial log
 esxi/destroy-vm.sh       # tear down
 ```
+
+## 📄 License
+
+[Apache License 2.0](LICENSE). Copyright 2026 Shane.
