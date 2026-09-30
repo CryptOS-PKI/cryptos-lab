@@ -4,6 +4,9 @@
 > environment, so new environments (bare metal, other hypervisors) can be added
 > alongside without disturbing the others.
 
+> [!WARNING]
+> 🚧 **Pre-1.0: any release can change fundamentally.** CryptOS is pre-1.0. Until v1.0.0, any release may change configuration, APIs, on-disk and state formats, trust setup, and upgrade paths, sometimes with no migration path. If you run it in production, you accept that risk. Read [each release's upgrade notes](https://github.com/CryptOS-PKI/cryptos/releases) before you upgrade.
+
 ## 🌍 Environments
 
 - 🖥️ **`esxi/`** — boot CryptOS on VMware ESXi via `govc`: upload an ISO, create a
