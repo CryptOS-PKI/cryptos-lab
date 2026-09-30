@@ -1,0 +1,147 @@
+# The lab operator CA as the Fleet Manager and its relying parties see it: the
+# CA cert (the chart's operatorCA.configMap), the current CRL, and a lab-grade
+# openssl ocsp responder. The responder's signer key and index come from the
+# operator-ocsp Secret; the CA key never enters the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${LAB_FM_NAMESPACE}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fm-operator-ca
+  namespace: ${LAB_FM_NAMESPACE}
+data:
+  operator-ca.pem: |
+${OPCA_CA_PEM_INDENTED}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fm-operator-crl
+  namespace: ${LAB_FM_NAMESPACE}
+data:
+  operator.crl.pem: |
+${OPCA_CRL_PEM_INDENTED}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator-ocsp
+  namespace: ${LAB_FM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: operator-ocsp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: operator-ocsp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: operator-ocsp
+      annotations:
+        # A new CRL, index or signer changes this and restarts the responder
+        # on the updated Secret.
+        lab.cryptos.dev/ocsp-bundle-sha256: "${OPCA_BUNDLE_SHA256}"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ocsp
+          image: ${OPENSSL_IMAGE}
+          args:
+            - ocsp
+            - -index
+            - /ocsp/index.txt
+            - -port
+            - "8080"
+            - -rsigner
+            - /ocsp/ocsp.crt
+            - -rkey
+            - /ocsp/ocsp.key
+            - -CA
+            - /ocsp/operator-ca.crt
+            - -nmin
+            - "60"
+            - -ignore_err
+          ports:
+            - name: ocsp
+              containerPort: 8080
+          # openssl ocsp wedges on a connection that closes without a request,
+          # so the probes send a real request instead of a bare TCP connect.
+          # The liveness probe restarts a wedged responder.
+          readinessProbe:
+            exec:
+              command:
+                - openssl
+                - ocsp
+                - -issuer
+                - /ocsp/operator-ca.crt
+                - -serial
+                - "0x01"
+                - -url
+                - http://127.0.0.1:8080/
+                - -timeout
+                - "3"
+                - -noverify
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - openssl
+                - ocsp
+                - -issuer
+                - /ocsp/operator-ca.crt
+                - -serial
+                - "0x01"
+                - -url
+                - http://127.0.0.1:8080/
+                - -timeout
+                - "3"
+                - -noverify
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: ocsp
+              mountPath: /ocsp
+              readOnly: true
+      volumes:
+        - name: ocsp
+          secret:
+            secretName: operator-ocsp
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: operator-ocsp
+  namespace: ${LAB_FM_NAMESPACE}
+spec:
+  selector:
+    app.kubernetes.io/name: operator-ocsp
+  ports:
+    - name: http
+      port: 80
+      targetPort: ocsp

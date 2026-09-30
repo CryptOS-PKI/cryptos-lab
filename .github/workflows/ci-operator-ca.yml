@@ -1,0 +1,35 @@
+name: operator CA lab tooling
+# Offline checks for operator-ca/ on every PR: a throwaway operator CA built by
+# the real scripts, the level extension DER, the CRL, a local openssl ocsp
+# responder, and the publish step in dry-run mode. Pull requests only, and not
+# while the PR is a draft.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "operator-ca/**"
+      - "k8s/lib.sh"
+      - "k8s/versions.env"
+      - "Taskfile.yml"
+      - ".github/workflows/ci-operator-ca.yml"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Checks
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install pinned check tools
+        run: |
+          set -euo pipefail
+          k8s/test/install-check-tools.sh | tail -n 1 >> "$GITHUB_PATH"
+      - name: task opca:check
+        run: task opca:check

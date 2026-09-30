@@ -71,6 +71,76 @@ task k8s:down                   # delete the cluster
 `task k8s:verify` and `task k8s:renew` reuse the last `k8s:issuer` inputs. Set
 `LOG_LEVEL=trace` for step-by-step logs.
 
+## 🔏 Fleet Manager operator CA
+
+The lab Fleet Manager's operator CA is an external OpenSSL CA, never a CryptOS
+node. `operator-ca/` builds it the way the manager docs describe: ECDSA P-384,
+`pathlen:0`, KU `keyCertSign, cRLSign`, one `openssl ca` extension section per
+level (`op_admin`, `op_operator`, `op_viewer`) with the level extension
+`1.3.6.1.4.1.59999.1.1` marked **non-critical** (Go's verifier refuses a client
+cert with an unhandled critical extension), an `authorityInfoAccess` OCSP URI, a
+CRL valid for 7 days, and a delegated OCSP signer (EKU OCSPSigning, `noCheck`,
+30 days) so the responder never needs the CA key.
+
+The CA lives in `.state/operator-ca/` (mode 700, gitignored); set
+`LAB_OPCA_DIR` to keep it elsewhere. `task k8s:down` doesn't touch it.
+
+> [!CAUTION]
+> `operator-ca.key` is the key every Fleet Manager admin credential hangs off.
+> Keep it on the lab box only: never copy it into the cluster, a ticket or this
+> repo. The publish step ships only the OCSP signer key.
+
+```
+task opca:init                                   # CA, OCSP signer, first CRL; prints the CA SHA-256
+LAB_OPCA_P12_PASS_FILE=~/admin.pass \
+  task opca:issue LEVEL=admin EMAIL=admin@example.org   # key, cert, checks, PKCS#12
+task opca:publish                                # CA ConfigMap, CRL ConfigMap, OCSP responder in kind
+task opca:revoke CERT=.state/operator-ca/issued/<email>/<email>.crt
+task opca:publish                                # after every revoke, CRL or signer renewal
+task opca:crl                                    # a new CRL before the 7 days run out
+task opca:ocsp-signer                            # a new signer before its 30 days run out
+task opca:check                                  # offline checks, no cluster needed
+```
+
+- 🔑 **PKCS#12 passphrase:** 18 bytes or more, from `LAB_OPCA_P12_PASS_FILE`
+  (first line) or `LAB_OPCA_P12_PASS`. It never goes on the command line or into a
+  log. `issue` lower-cases the email, and refuses a cert that fails the Fleet
+  Manager's checks (level extension present, non-critical and exact, EKU exactly
+  clientAuth, KU digitalSignature, CA:FALSE).
+- 🛰️ **OCSP responder:** `openssl ocsp` in the `operator-ocsp` Deployment
+  (namespace `LAB_FM_NAMESPACE`, default `fleet`), image pinned in
+  `k8s/versions.env`, answering at `http://operator-ocsp.fleet.svc.cluster.local/`
+  (the default `LAB_OPCA_OCSP_URL`, which `init` writes into every leaf's AIA).
+  Its copy of `index.txt` comes from a Secret, so `opca:publish` updates the
+  Secret and restarts the responder whenever the index, CRL or signer changes.
+  Responses carry a 60-minute nextUpdate. The probes send a real OCSP request,
+  because a bare TCP connect wedges `openssl ocsp`. From the lab box:
+
+  ```
+  kubectl -n fleet port-forward svc/operator-ocsp 8080:80 &
+  openssl ocsp -issuer .state/operator-ca/operator-ca.crt -cert <cert> \
+    -url http://127.0.0.1:8080 -CAfile .state/operator-ca/operator-ca.crt -resp_text
+  ```
+
+> [!WARNING]
+> `openssl ocsp` is a lab-grade responder: single-threaded, no TLS, no caching
+> and no high availability. Don't use it outside the lab.
+
+- ⚙️ **Fleet Manager values** (`chart/fleet-manager`): trust the CA through the
+  file source and drop `operatorCANode`:
+
+  ```yaml
+  operatorCA: {configMap: fm-operator-ca}   # written by task opca:publish
+  # operatorCANode: removed; a CryptOS node is never the operator CA
+  mcp: {enabled: false}                     # see below
+  ```
+
+  Until the manager can take a CRL (`operatorCRL`) and OCSP settings, it has no
+  operator revocation source without `operatorCANode`: the CRL and responder are
+  published for that, and MCP stays off, because the manager refuses MCP without
+  a revocation source. The CRL is in the `fm-operator-crl` ConfigMap, key
+  `operator.crl.pem`.
+
 ## 📄 License
 
 [Apache License 2.0](LICENSE). Copyright The CryptOS Authors.

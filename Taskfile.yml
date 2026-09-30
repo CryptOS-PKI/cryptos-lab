@@ -47,3 +47,41 @@ tasks:
     desc: "Offline checks: shellcheck, pins, dry runs, kubeconform, chain checks"
     cmds:
       - k8s/test/run.sh
+
+  opca:init:
+    desc: "Create the lab operator CA (OpenSSL, P-384), its delegated OCSP signer and a first CRL"
+    cmds:
+      - operator-ca/ca.sh init
+
+  opca:issue:
+    desc: "Issue an operator cert and PKCS#12 (LEVEL=admin|operator|viewer EMAIL=...)"
+    summary: |
+      LAB_OPCA_P12_PASS_FILE=<file> task opca:issue LEVEL=admin EMAIL=admin@example.org
+      The passphrase (18 bytes or more) comes from LAB_OPCA_P12_PASS_FILE or LAB_OPCA_P12_PASS.
+    cmds:
+      - operator-ca/ca.sh issue "{{.LEVEL}}" "{{.EMAIL}}"
+
+  opca:revoke:
+    desc: "Revoke an operator cert and publish a new CRL (CERT=... [REASON=superseded])"
+    cmds:
+      - operator-ca/ca.sh revoke "{{.CERT}}" "{{.REASON | default "superseded"}}"
+
+  opca:crl:
+    desc: "Publish a new CRL (each is valid for 7 days)"
+    cmds:
+      - operator-ca/ca.sh crl
+
+  opca:ocsp-signer:
+    desc: "Renew the delegated OCSP signer (valid for 30 days)"
+    cmds:
+      - operator-ca/ca.sh ocsp-signer
+
+  opca:publish:
+    desc: "[Linux] Put the CA cert, the CRL and the OCSP responder in the kind cluster"
+    cmds:
+      - operator-ca/publish.sh
+
+  opca:check:
+    desc: "Offline checks for operator-ca/: shellcheck, a throwaway CA, the extension DER, CRL and OCSP"
+    cmds:
+      - operator-ca/test/run.sh
