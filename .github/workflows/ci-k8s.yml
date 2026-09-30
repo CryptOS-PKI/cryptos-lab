@@ -1,0 +1,70 @@
+name: k8s lab tooling
+# Offline checks for k8s/ on every PR, and a real kind run of task k8s:up (twice,
+# to prove the re-run changes nothing) and task k8s:down on a GitHub-hosted
+# runner. The ACME part needs a CryptOS Intermediate, so it runs on the lab box
+# only. Pull requests only, and not while the PR is a draft.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "k8s/**"
+      - "Taskfile.yml"
+      - ".github/workflows/ci-k8s.yml"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Checks
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install pinned check tools
+        run: |
+          set -euo pipefail
+          k8s/test/install-check-tools.sh | tail -n 1 >> "$GITHUB_PATH"
+      - name: task k8s:check
+        run: task k8s:check
+
+  kind:
+    name: kind up, re-run, down
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      LOG_LEVEL: debug
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install pinned task
+        run: |
+          set -euo pipefail
+          k8s/test/install-check-tools.sh | tail -n 1 >> "$GITHUB_PATH"
+      - name: task k8s:up
+        run: task k8s:up
+      - name: task k8s:up again changes nothing
+        run: |
+          set -euo pipefail
+          task k8s:up 2>&1 | tee "$RUNNER_TEMP/second.log"
+          grep -q "kind cluster cryptos-lab already exists" "$RUNNER_TEMP/second.log"
+          test "$(grep -c "up to date, nothing to apply" "$RUNNER_TEMP/second.log")" = 3
+          if grep -E "applying|creating kind cluster|installed [a-z]+ ->" "$RUNNER_TEMP/second.log"; then
+            echo "the second task k8s:up changed something" >&2
+            exit 1
+          fi
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          export KUBECONFIG="$PWD/.state/k8s/kubeconfig" PATH="$PWD/.tools/bin:$PATH"
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -n 50 || true
+      - name: task k8s:down
+        run: task k8s:down
+      - name: task k8s:down again is a no-op
+        run: task k8s:down 2>&1 | grep "nothing to do"

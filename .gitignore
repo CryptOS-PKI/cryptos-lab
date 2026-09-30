@@ -2,8 +2,13 @@
 .env
 *.env
 !.env.example
+!k8s/versions.env
 # Local artifacts / captures.
 *.log
 *.png
 *.iso
 serial*.txt
+
+# k8s/ tooling: pinned downloads and per-run state.
+.tools/
+.state/
