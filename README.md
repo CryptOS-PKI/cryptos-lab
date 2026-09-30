@@ -20,6 +20,8 @@ Copy `.env.example` to `.env`, fill in your host and target settings, then
 `source .env`. ⚠️ `.env` is gitignored and must never be committed — this repo is
 public.
 
+🛑 **Lab only:** this tooling targets a lab ESXi host; never point it at production CryptOS nodes.
+
 ## 🚀 ESXi quick start
 
 ```
