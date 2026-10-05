@@ -144,6 +144,10 @@ task opca:check                                  # offline checks, no cluster ne
   a revocation source. The CRL is in the `fm-operator-crl` ConfigMap, key
   `operator.crl.pem`.
 
+## 🙏 Acknowledgements
+
+CryptOS was originally written by [@Bugs5382](https://github.com/Bugs5382).
+
 ## 📄 License
 
 [Apache License 2.0](LICENSE). Copyright The CryptOS Authors.
